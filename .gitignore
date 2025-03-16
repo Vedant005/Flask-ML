@@ -5,4 +5,4 @@ instance/
 *.pyc
 *.pyo
 *.db
-freelance.csv
+./freelance.csv

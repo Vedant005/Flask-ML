@@ -6,7 +6,7 @@ from sklearn.preprocessing import StandardScaler
 
 app = Flask(__name__)
 
-df = pd.read_csv('freelance.csv')
+df = pd.read_csv('data/freelance.csv')
 
 features = ['amount_amount', 'hourly_rate', 'client_total_reviews', 'client_total_spent', 'total_freelancers_to_hire']
 

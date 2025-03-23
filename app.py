@@ -1,3 +1,4 @@
+from flask.cli import load_dotenv
 import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -6,19 +7,20 @@ from flask import Flask, request, jsonify
 from pymongo import MongoClient
 import json
 
+import os
 app = Flask(__name__)
 
-# ✅ MongoDB connection
-MONGODB_URI= "mongodb+srv://vedant:mongovedant101@cluster0.7m05iz5.mongodb.net"
-  # Replace with your connection string
-DB_NAME = "skillbridge"
-COLLECTION_NAME = "clients"
+load_dotenv()
+
+
+MONGODB_URI = os.getenv("MONGODB_URI")
+DB_NAME = os.getenv("DB_NAME")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME")
 
 client = MongoClient(MONGODB_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
-# ✅ Function to load and process gigs data
 def load_data_from_mongodb():
     gigs = list(collection.aggregate([
         { "$unwind": "$gigs" },  # Flatten gigs array
@@ -52,10 +54,9 @@ def load_data_from_mongodb():
     if not gigs:
         return pd.DataFrame()
 
-    # Convert MongoDB response to DataFrame
+  
     df = pd.DataFrame(gigs)
 
-    # Flatten gig structure
     df = pd.concat([df.drop(columns=["gigs"]), df["gigs"].apply(pd.Series)], axis=1)
 
     # Fill missing values
@@ -67,7 +68,7 @@ def load_data_from_mongodb():
 
     return df
 
-# 🔥 Recommendation function with serialization
+
 def recommend_gigs_by_id(gig_id, num_recommendations=5):
     df = load_data_from_mongodb()
     
@@ -139,7 +140,7 @@ def recommend_gigs_by_id(gig_id, num_recommendations=5):
 
     return recommended_gigs
 
-# 🚀 API Route: Get Recommended Gigs
+
 @app.route("/recommend", methods=["GET"])
 def getRecommendedGigs():
     gig_id = request.args.get("gig_id")
@@ -149,7 +150,7 @@ def getRecommendedGigs():
 
     recommendations = recommend_gigs_by_id(gig_id)
 
-    # ✅ Use `json.dumps()` to serialize the dictionary before returning it
+    # Use `json.dumps()` to serialize the dictionary before returning it
     return app.response_class(
         response=json.dumps(recommendations, default=str),
         status=200,
@@ -165,11 +166,11 @@ def get_gigs_with_sentiment():
     for client in gigs:
         for gig in client['gigs']:
             
-            # ✅ Check for review and feedback values
+            #  Check for review and feedback values
             reviews = gig.get("client_total_reviews", 0)
             feedback = gig.get("client_total_feedback", 0)
 
-            # ✅ Determine sentiment based on feedback
+            #  Determine sentiment based on feedback
             if feedback >= 4.0:
                 sentiment = "Positive"
             elif 2.5 <= feedback < 4.0:
@@ -183,7 +184,7 @@ def get_gigs_with_sentiment():
                 "clientId": client['_id'],
                 "gig": {
                     **gig,
-                    "sentiment": sentiment,    # ✅ Add sentiment field
+                    "sentiment": sentiment,    
                     "total_reviews": reviews,
                     "feedback_score": feedback
                 }

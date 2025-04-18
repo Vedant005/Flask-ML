@@ -1,13 +1,17 @@
+from flask import Flask, request, jsonify
 from flask.cli import load_dotenv
 import pandas as pd
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from flask import Flask, request, jsonify
-from pymongo import MongoClient
 import json
-
 import os
+from pymongo import MongoClient
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics.pairwise import cosine_similarity
+
+
 app = Flask(__name__)
 
 load_dotenv()
@@ -42,8 +46,10 @@ def load_data_from_mongodb():
                 "gigs.engagement": 1,
                 "gigs.proposals_tier": 1,
                 "gigs.published_on": 1,
+                "gigs.tier":1,
                 "gigs.client_total_reviews": 1,
                 "gigs.client_total_spent": 1,
+                "gigs.client_total_feedback":1,
                 "gigs.client_location_country": 1,
                 "gigs.occupations_category_pref_label": 1,
                 "gigs.occupations_oservice_pref_label": 1,
@@ -128,6 +134,7 @@ def recommend_gigs_by_id(gig_id, num_recommendations=5):
                 "engagement": str(gig["engagement"]),
                 "proposals_tier": str(gig["proposals_tier"]),
                 "published_on": str(gig["published_on"]),
+                "tier":str(gig["tier"]),
                 "client_total_reviews": int(gig["client_total_reviews"]) if pd.notna(gig["client_total_reviews"]) else 0,
                 "client_total_spent": int(gig["client_total_spent"]) if pd.notna(gig["client_total_spent"]) else 0,
                 "client_location_country": str(gig["client_location_country"]),
@@ -191,6 +198,63 @@ def get_gigs_with_sentiment():
             })
 
     return jsonify(gigs_with_sentiment)
+
+def train_price_model():
+    df = load_data_from_mongodb()
+    
+    if df.empty:
+        return None
+    
+    # Preprocessing
+    df = df.fillna({"client_total_spent": 0})
+
+    
+    # Categorical and numerical features
+    cat_cols = ["duration", "type", "engagement", "tier", "proposals_tier", "occupations_category_pref_label"]
+    num_cols = ["hourly_rate", "client_total_spent", "client_total_reviews", "client_total_feedback"]
+    
+    # One-hot encode categorical variables
+    encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    encoded_cats = encoder.fit_transform(df[cat_cols])
+    encoded_cat_df = pd.DataFrame(encoded_cats, columns=encoder.get_feature_names_out(cat_cols))
+    
+    # Combine numerical and categorical data
+    X = pd.concat([df[num_cols], encoded_cat_df], axis=1)
+    y = df["amount_amount"]
+    
+    # Train-test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Train Random Forest model
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    
+    return model, encoder, num_cols, cat_cols
+
+# Train the model on startup
+model, encoder, num_cols, cat_cols = train_price_model()
+
+@app.route('/predict_price', methods=['POST'])
+def predict_price():
+    if not model:
+        return jsonify({"error": "Model not trained or no data available"}), 500
+    
+    data = request.json
+    
+    # Prepare input data
+    input_data = pd.DataFrame([data])
+    
+    # One-hot encode categorical variables
+    encoded_cats = encoder.transform(input_data[cat_cols])
+    encoded_cat_df = pd.DataFrame(encoded_cats, columns=encoder.get_feature_names_out(cat_cols))
+    
+    # Combine numerical and categorical data
+    X_input = pd.concat([input_data[num_cols], encoded_cat_df], axis=1)
+    
+    # Make prediction
+    predicted_price = model.predict(X_input)[0]
+    
+    return jsonify({"predicted_price": round(predicted_price, 2)})
 
 if __name__ == "__main__":
     app.run(debug=True)
